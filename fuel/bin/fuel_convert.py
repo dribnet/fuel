@@ -21,6 +21,22 @@ class CheckDirectoryAction(argparse.Action):
         else:
             raise ValueError('{} is not a existing directory'.format(values))
 
+def update_datasets(built_in_datasets, name):
+    """Add packages to list of built in datasets by name"""
+    extra_datasets = dict(importlib.import_module(name).all_converters)
+    if any(key in built_in_datasets for key in extra_datasets.keys()):
+        raise ValueError('extra converters conflict in name with '
+                         'built-in converters')
+    built_in_datasets.update(extra_datasets)
+
+def handle_extra(built_in_datasets):
+    """Special pre-parser for --extra"""
+    if "--extra" in sys.argv:
+        ix = sys.argv.index("--extra")
+        if ix > len(sys.argv) - 2:
+            return
+        update_datasets(built_in_datasets, sys.argv[ix+1])
+        sys.argv[ix:ix+2] = []
 
 def main(args=None):
     """Entry point for `fuel-convert` script.
@@ -36,16 +52,15 @@ def main(args=None):
 
     """
     built_in_datasets = dict(converters.all_converters)
+    handle_extra(built_in_datasets)
     if fuel.config.extra_converters:
         for name in fuel.config.extra_converters:
-            extra_datasets = dict(
-                importlib.import_module(name).all_converters)
-            if any(key in built_in_datasets for key in extra_datasets.keys()):
-                raise ValueError('extra converters conflict in name with '
-                                 'built-in converters')
-            built_in_datasets.update(extra_datasets)
+            add_datasets(built_in_datasets, name)
     parser = argparse.ArgumentParser(
         description='Conversion script for built-in datasets.')
+    parser.add_argument(
+        "--extra", help="add an extra downloader package",
+        type=str, default=None)
     subparsers = parser.add_subparsers()
     parent_parser = argparse.ArgumentParser(add_help=False)
     parent_parser.add_argument(
@@ -62,6 +77,7 @@ def main(args=None):
 
     args = parser.parse_args(args)
     args_dict = vars(args)
+    args_dict.pop("extra", None)
     try:
         func = import_function_by_name(args_dict.pop('func'))
     except KeyError:

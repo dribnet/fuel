@@ -3,6 +3,7 @@
 import argparse
 import importlib
 import os
+import sys
 
 import fuel
 from fuel import downloaders
@@ -16,6 +17,22 @@ Provide a URL prefix with --url-prefix to prepend to the filenames,
 e.g. http://path.to/files/
 """.strip()
 
+def update_datasets(built_in_datasets, name):
+    """Add packages to list of built in datasets by name"""
+    extra_datasets = dict(importlib.import_module(name).all_downloaders)
+    if any(key in built_in_datasets for key in extra_datasets.keys()):
+        raise ValueError('extra downloaders conflict in name with '
+                         'built-in downloaders')
+    built_in_datasets.update(extra_datasets)
+
+def handle_extra(built_in_datasets):
+    """Special pre-parser for --extra"""
+    if "--extra" in sys.argv:
+        ix = sys.argv.index("--extra")
+        if ix > len(sys.argv) - 2:
+            return
+        update_datasets(built_in_datasets, sys.argv[ix+1])
+        sys.argv[ix:ix+2] = []
 
 def main(args=None):
     """Entry point for `fuel-download` script.
@@ -30,17 +47,17 @@ def main(args=None):
         be used.
 
     """
+
     built_in_datasets = dict(downloaders.all_downloaders)
     if fuel.config.extra_downloaders:
         for name in fuel.config.extra_downloaders:
-            extra_datasets = dict(
-                importlib.import_module(name).all_downloaders)
-            if any(key in built_in_datasets for key in extra_datasets.keys()):
-                raise ValueError('extra downloaders conflict in name with '
-                                 'built-in downloaders')
-            built_in_datasets.update(extra_datasets)
+            update_datasets(built_in_datasets, name)
+    handle_extra(built_in_datasets)
     parser = argparse.ArgumentParser(
         description='Download script for built-in datasets.')
+    parser.add_argument(
+        "--extra", help="add an extra downloader package",
+        type=str, default=None)
     parent_parser = argparse.ArgumentParser(add_help=False)
     parent_parser.add_argument(
         "-d", "--directory", help="where to save the downloaded files",
@@ -54,6 +71,7 @@ def main(args=None):
             help='Download the {} dataset'.format(name)))
     args = parser.parse_args()
     args_dict = vars(args)
+    args_dict.pop("extra", None)
     try:
         func = import_function_by_name(args_dict.pop('func'))
     except KeyError:
